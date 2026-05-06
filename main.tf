@@ -2,51 +2,33 @@ provider "aws" {
   region = "ap-south-1"
 }
 
-resource "aws_vpc" "krishna01_vpc" {
-  cidr_block = "10.0.0.0/16"
+data "aws_vpc" "existing" {
+  id = "vpc-0aeb9af7097d60b8b"
+}
 
-  tags = {
-    Name = "krishna01-vpc"
+data "aws_subnets" "existing" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.existing.id]
   }
 }
 
-resource "aws_subnet" "krishna01_subnet" {
-  count = 2
-  vpc_id                  = aws_vpc.krishna01_vpc.id
-  cidr_block              = cidrsubnet(aws_vpc.krishna01_vpc.cidr_block, 8, count.index)
-  availability_zone       = element(["ap-south-1a", "ap-south-1b"], count.index)
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "krishna01-subnet-${count.index}"
-  }
+resource "aws_security_group" "krishna01_cluster_sg" {
+  vpc_id = data.aws_vpc.existing.id
 }
 
-resource "aws_internet_gateway" "krishna01_igw" {
-  vpc_id = aws_vpc.krishna01_vpc.id
-
-  tags = {
-    Name = "krishna01-igw"
-  }
+resource "aws_security_group" "krishna01_node_sg" {
+  vpc_id = data.aws_vpc.existing.id
 }
 
-resource "aws_route_table" "krishna01_route_table" {
-  vpc_id = aws_vpc.krishna01_vpc.id
+resource "aws_eks_cluster" "krishna01" {
+  name     = "krishna01-cluster"
+  role_arn = aws_iam_role.krishna01_cluster_role.arn
 
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.krishna01_igw.id
+  vpc_config {
+    subnet_ids         = data.aws_subnets.existing.ids
+    security_group_ids = [aws_security_group.krishna01_cluster_sg.id]
   }
-
-  tags = {
-    Name = "krishna01-route-table"
-  }
-}
-
-resource "aws_route_table_association" "krishna01_association" {
-  count          = 2
-  subnet_id      = aws_subnet.krishna01_subnet[count.index].id
-  route_table_id = aws_route_table.krishna01_route_table.id
 }
 
 resource "aws_security_group" "krishna01_cluster_sg" {
@@ -118,7 +100,7 @@ resource "aws_eks_node_group" "krishna01" {
     min_size     = 3
   }
 
-  instance_types = ["t2.medium"]
+  instance_types = ["c7i-flex.large"]
 
   remote_access {
     ec2_ssh_key = var.ssh_key_name
